@@ -154,6 +154,7 @@
         <developerConnection>scm:git:git@github.com:keycloak/keycloak.git</developerConnection>
         <url>https://github.com/keycloak/keycloak/tree/master/</url>
     </scm>
+<!--
 
     <distributionManagement>
         <repository>
@@ -161,6 +162,18 @@
             <name>JBoss Releases Repository</name>
             <url>https://repository.jboss.org/nexus/service/local/staging/deploy/maven2/</url>
         </repository>
+    </distributionManagement>
+-->
+
+    <distributionManagement>
+        <repository>
+            <id>deploy-releases</id>
+            <url>http://localhost:8888/nexus/content/repositories/releases</url>
+        </repository>
+        <snapshotRepository>
+            <id>deploy-snapshots</id>
+            <url>http://localhost:8888/nexus/content/repositories/snapshots</url>
+        </snapshotRepository>
     </distributionManagement>
 
     <issueManagement>
@@ -1447,9 +1460,16 @@
                     <artifactId>nexus-staging-maven-plugin</artifactId>
                     <version>${nexus.staging.plugin.version}</version>
                     <extensions>true</extensions>
+                    <!--
                     <configuration>
                         <nexusUrl>https://repository.jboss.org/nexus</nexusUrl>
                         <serverId>jboss-releases-repository</serverId>
+                    </configuration>
+                    -->
+                    <configuration>
+                        <serverId>deploy-snapshots</serverId>
+                        <nexusUrl>http://localhost:8888/</nexusUrl>
+                        <autoReleaseAfterClose>true</autoReleaseAfterClose>
                     </configuration>
                 </plugin>
                 <plugin>
