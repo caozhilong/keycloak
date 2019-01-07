@@ -41,14 +41,13 @@ import org.keycloak.OAuthErrorException;
 import org.keycloak.authorization.AuthorizationProvider;
 import org.keycloak.authorization.admin.representation.PolicyEvaluationResponseBuilder;
 import org.keycloak.authorization.attribute.Attributes;
-import org.keycloak.authorization.common.KeycloakEvaluationContext;
+import org.keycloak.authorization.common.DefaultEvaluationContext;
 import org.keycloak.authorization.common.KeycloakIdentity;
 import org.keycloak.authorization.model.Resource;
 import org.keycloak.authorization.model.ResourceServer;
 import org.keycloak.authorization.model.Scope;
 import org.keycloak.authorization.permission.ResourcePermission;
 import org.keycloak.authorization.policy.evaluation.DecisionPermissionCollector;
-import org.keycloak.authorization.policy.evaluation.DecisionResultCollector;
 import org.keycloak.authorization.policy.evaluation.EvaluationContext;
 import org.keycloak.authorization.policy.evaluation.Result;
 import org.keycloak.authorization.store.ScopeStore;
@@ -132,7 +131,7 @@ public class PolicyEvaluationService {
     }
 
     private EvaluationContext createEvaluationContext(PolicyEvaluationRequest representation, KeycloakIdentity identity) {
-        return new KeycloakEvaluationContext(identity, this.authorization.getKeycloakSession()) {
+        return new DefaultEvaluationContext(identity, this.authorization.getKeycloakSession()) {
             @Override
             public Attributes getAttributes() {
                 Map<String, Collection<String>> attributes = new HashMap<>(super.getAttributes().toMap());
@@ -176,9 +175,9 @@ public class PolicyEvaluationService {
 
             if (resource.getId() != null) {
                 Resource resourceModel = storeFactory.getResourceStore().findById(resource.getId(), resourceServer.getId());
-                return new ArrayList<>(Arrays.asList(Permissions.createResourcePermissions(resourceModel, scopes.stream().map(Scope::getName).collect(Collectors.toSet()), authorization, request))).stream();
+                return new ArrayList<>(Arrays.asList(Permissions.createResourcePermissions(resourceModel, scopes, authorization, request))).stream();
             } else if (resource.getType() != null) {
-                return storeFactory.getResourceStore().findByType(resource.getType(), resourceServer.getId()).stream().map(resource1 -> Permissions.createResourcePermissions(resource1, scopes.stream().map(Scope::getName).collect(Collectors.toSet()), authorization, request));
+                return storeFactory.getResourceStore().findByType(resource.getType(), resourceServer.getId()).stream().map(resource1 -> Permissions.createResourcePermissions(resource1, scopes, authorization, request));
             } else {
                 if (scopes.isEmpty()) {
                     return Permissions.all(resourceServer, evaluationContext.getIdentity(), authorization, request).stream();
@@ -191,7 +190,7 @@ public class PolicyEvaluationService {
                 }
 
 
-                return resources.stream().map(resource12 -> Permissions.createResourcePermissions(resource12, scopes.stream().map(Scope::getName).collect(Collectors.toSet()), authorization, request));
+                return resources.stream().map(resource12 -> Permissions.createResourcePermissions(resource12, scopes, authorization, request));
             }
         }).collect(Collectors.toList());
     }
@@ -209,6 +208,25 @@ public class PolicyEvaluationService {
                 keycloakSession.sessions().removeUserSession(realm, userSession);
             }
 
+        }
+
+        @Override
+        public String getId() {
+            if (userSession != null) {
+                return super.getId();
+            }
+
+            String issuedFor = accessToken.getIssuedFor();
+
+            if (issuedFor != null) {
+                UserModel serviceAccount = keycloakSession.users().getServiceAccount(realm.getClientByClientId(issuedFor));
+
+                if (serviceAccount != null) {
+                    return serviceAccount.getId();
+                }
+            }
+
+            return null;
         }
     }
 
@@ -252,17 +270,31 @@ public class PolicyEvaluationService {
             accessToken = new AccessToken();
 
             accessToken.subject(representation.getUserId());
-            accessToken.issuedFor(representation.getClientId());
-            accessToken.audience(representation.getClientId());
+            ClientModel client = null;
+            String clientId = representation.getClientId();
+
+            if (clientId != null) {
+                client = realm.getClientById(clientId);
+            }
+
+            if (client == null) {
+                client = realm.getClientById(resourceServer.getId());
+            }
+
+            accessToken.issuedFor(client.getClientId());
+            accessToken.audience(client.getId());
             accessToken.issuer(Urls.realmIssuer(keycloakSession.getContext().getUri().getBaseUri(), realm.getName()));
             accessToken.setRealmAccess(new AccessToken.Access());
 
         }
 
-        AccessToken.Access realmAccess = accessToken.getRealmAccess();
+        if (representation.getRoleIds() != null && !representation.getRoleIds().isEmpty()) {
+            if (accessToken.getRealmAccess() == null) {
+                accessToken.setRealmAccess(new AccessToken.Access());
+            }
+            AccessToken.Access realmAccess = accessToken.getRealmAccess();
 
-        if (representation.getRoleIds() != null) {
-            representation.getRoleIds().forEach(roleName -> realmAccess.addRole(roleName));
+            representation.getRoleIds().forEach(realmAccess::addRole);
         }
 
         return new CloseableKeycloakIdentity(accessToken, keycloakSession, userSession);

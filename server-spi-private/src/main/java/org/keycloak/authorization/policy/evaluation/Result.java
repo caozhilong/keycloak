@@ -86,11 +86,16 @@ public class Result {
         }
 
         public PolicyResult policy(Policy policy, Effect effect) {
-            PolicyResult result = associatedPolicies.computeIfAbsent(policy.getId(), id -> new PolicyResult(policy, effect));
+            PolicyResult policyResult = associatedPolicies.get(policy.getId());
 
-            result.setEffect(effect);
+            if (policyResult == null) {
+                policyResult = new PolicyResult(policy, effect);
+                associatedPolicies.put(policy.getId(), policyResult);
+            } else {
+                policyResult.setEffect(effect);
+            }
 
-            return result;
+            return policyResult;
         }
 
         public Policy getPolicy() {

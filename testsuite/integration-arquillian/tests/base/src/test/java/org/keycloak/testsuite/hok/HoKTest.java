@@ -37,13 +37,13 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.common.util.KeystoreUtil;
+import org.keycloak.crypto.Algorithm;
 import org.keycloak.events.Details;
 import org.keycloak.events.EventType;
-import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSHeader;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.jose.jws.JWSInputException;
-import org.keycloak.jose.jws.crypto.HashProvider;
+import org.keycloak.jose.jws.crypto.HashUtils;
 import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
 import org.keycloak.protocol.oidc.utils.OIDCResponseType;
 import org.keycloak.representations.AccessToken;
@@ -226,9 +226,8 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
         assertNull(header.getContentType());
 
         header = new JWSInput(response.getRefreshToken()).getHeader();
-        assertEquals("RS256", header.getAlgorithm().name());
+        assertEquals("HS256", header.getAlgorithm().name());
         assertEquals("JWT", header.getType());
-        assertEquals(expectedKid, header.getKeyId());
         assertNull(header.getContentType());
 
         AccessToken token = oauth.verifyToken(response.getAccessToken());
@@ -246,7 +245,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
 
         EventRepresentation event = events.expectCodeToToken(codeId, sessionId).assertEvent();
         assertEquals(token.getId(), event.getDetails().get(Details.TOKEN_ID));
-        assertEquals(oauth.verifyRefreshToken(response.getRefreshToken()).getId(), event.getDetails().get(Details.REFRESH_TOKEN_ID));
+        assertEquals(oauth.parseRefreshToken(response.getRefreshToken()).getId(), event.getDetails().get(Details.REFRESH_TOKEN_ID));
         assertEquals(sessionId, token.getSessionState());
     }
 
@@ -268,7 +267,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
 
         // second client user login
         OAuthClient oauth2 = new OAuthClient();
-        oauth2.init(adminClient, driver2);
+        oauth2.init(driver2);
         oauth2.doLogin("john-doh@localhost", "password");
         String code2 = oauth2.getCurrentQuery().get(OAuth2Constants.CODE);
         AccessTokenResponse tokenResponse2 = null;
@@ -312,7 +311,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
         verifyHoKTokenDefaultCertThumbPrint(tokenResponse);
         AccessToken token = oauth.verifyToken(tokenResponse.getAccessToken());
         String refreshTokenString = tokenResponse.getRefreshToken();
-        RefreshToken refreshToken = oauth.verifyRefreshToken(refreshTokenString);
+        RefreshToken refreshToken = oauth.parseRefreshToken(refreshTokenString);
         EventRepresentation tokenEvent = events.expectCodeToToken(codeId, sessionId).assertEvent();
 
         Assert.assertNotNull(refreshTokenString);
@@ -350,7 +349,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
         verifyHoKTokenDefaultCertThumbPrint(tokenResponse);
         AccessToken token = oauth.verifyToken(tokenResponse.getAccessToken());
         String refreshTokenString = tokenResponse.getRefreshToken();
-        RefreshToken refreshToken = oauth.verifyRefreshToken(refreshTokenString);
+        RefreshToken refreshToken = oauth.parseRefreshToken(refreshTokenString);
 
         Assert.assertNotNull(refreshTokenString);
         assertEquals("bearer", tokenResponse.getTokenType());
@@ -380,7 +379,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
     
     private void expectSuccessfulResponseFromTokenEndpoint(OAuthClient oauth, String username, AccessTokenResponse response, String sessionId, AccessToken token, RefreshToken refreshToken, EventRepresentation tokenEvent) {
         AccessToken refreshedToken = oauth.verifyToken(response.getAccessToken());
-        RefreshToken refreshedRefreshToken = oauth.verifyRefreshToken(response.getRefreshToken());
+        RefreshToken refreshedRefreshToken = oauth.parseRefreshToken(response.getRefreshToken());
         if (refreshedToken.getCertConf() != null) {
             log.warnf("refreshed access token's cnf-x5t#256 = %s", refreshedToken.getCertConf().getCertThumbprint());
             log.warnf("refreshed refresh token's cnf-x5t#256 = %s", refreshedRefreshToken.getCertConf().getCertThumbprint());    
@@ -580,7 +579,7 @@ public class HoKTest extends AbstractTestRealmKeycloakTest {
         // Validate "c_hash"
         Assert.assertNull(idToken.getAccessTokenHash());
         Assert.assertNotNull(idToken.getCodeHash());
-        Assert.assertEquals(idToken.getCodeHash(), HashProvider.oidcHash(Algorithm.RS256, authzResponse.getCode()));
+        Assert.assertEquals(idToken.getCodeHash(), HashUtils.oidcHash(Algorithm.RS256, authzResponse.getCode()));
 
         // IDToken exchanged for the code
         IDToken idToken2 = sendTokenRequestAndGetIDToken(loginEvent);
